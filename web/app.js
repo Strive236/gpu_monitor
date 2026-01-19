@@ -1,6 +1,11 @@
 const serverListEl = document.getElementById("serverList");
 const serverItemTemplate = document.getElementById("serverItemTemplate");
 const serverCountEl = document.getElementById("serverCount");
+const filterListEl = document.getElementById("filterList");
+const selectAllBtn = document.getElementById("selectAllBtn");
+const clearAllBtn = document.getElementById("clearAllBtn");
+const filterToggleBtn = document.getElementById("filterToggleBtn");
+const filterPopoverEl = document.getElementById("filterPopover");
 const refreshBtn = document.getElementById("refreshBtn");
 const lastUpdatedEl = document.getElementById("lastUpdated");
 const configPathEl = document.getElementById("configPath");
@@ -35,6 +40,8 @@ const serverItems = new Map();
 const serverStatuses = new Map();
 let detailHasData = false;
 let processHasData = false;
+let visibleHosts = new Set();
+let manualFilter = false;
 
 const formatPercent = (value) => `${value}%`;
 const formatMiB = (value) => `${value.toLocaleString("en-US")} MiB`;
@@ -82,9 +89,61 @@ function hideToast(toast) {
   setTimeout(() => toast.remove(), 250);
 }
 
+function openFilterPopover() {
+  if (!filterPopoverEl) {
+    return;
+  }
+  filterPopoverEl.classList.add("open");
+  filterPopoverEl.setAttribute("aria-hidden", "false");
+}
+
+function closeFilterPopover() {
+  if (!filterPopoverEl) {
+    return;
+  }
+  filterPopoverEl.classList.remove("open");
+  filterPopoverEl.setAttribute("aria-hidden", "true");
+}
+
 function clearServers() {
   serverListEl.innerHTML = "";
   serverItems.clear();
+}
+
+function applyFilter() {
+  const visibleList = hosts.filter((host) => visibleHosts.has(host));
+  renderServers(visibleList, hosts.length);
+}
+
+function toggleHostVisibility(host, isVisible) {
+  if (isVisible) {
+    visibleHosts.add(host);
+  } else {
+    visibleHosts.delete(host);
+  }
+  manualFilter = true;
+  applyFilter();
+  renderFilterList(hosts);
+}
+
+function renderFilterList(list) {
+  if (!filterListEl) {
+    return;
+  }
+  filterListEl.innerHTML = "";
+  list.forEach((host) => {
+    const item = document.createElement("label");
+    item.className = "filter-item";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = visibleHosts.has(host);
+    checkbox.addEventListener("change", () => toggleHostVisibility(host, checkbox.checked));
+    const text = document.createElement("span");
+    text.textContent = host;
+    item.appendChild(checkbox);
+    item.appendChild(text);
+    filterListEl.appendChild(item);
+  });
 }
 
 function updateServerItemStatus(item, status) {
@@ -165,9 +224,13 @@ function buildServerItem(host) {
   return node;
 }
 
-function renderServers(list) {
+function renderServers(list, totalCount = null) {
   clearServers();
-  serverCountEl.textContent = list.length.toString();
+  if (totalCount == null) {
+    serverCountEl.textContent = list.length.toString();
+  } else {
+    serverCountEl.textContent = `${list.length}/${totalCount}`;
+  }
   if (!list.length) {
     showNoServers();
     return;
@@ -487,12 +550,18 @@ async function loadServers() {
 async function refreshAll() {
   try {
     hosts = await loadServers();
+    if (!manualFilter) {
+      visibleHosts = new Set(hosts);
+    } else {
+      visibleHosts = new Set(hosts.filter((host) => visibleHosts.has(host)));
+    }
+    renderFilterList(hosts);
     if (!hosts.length) {
       renderServers([]);
       setStatus("No hosts found in SSH config");
       return;
     }
-    renderServers(hosts);
+    applyFilter();
     if (selectedHost) {
       const ok = await loadStatusForSelected({ force: true });
       let processesOk = true;
@@ -543,6 +612,52 @@ function scheduleRefresh() {
 }
 
 refreshBtn.addEventListener("click", refreshAll);
+if (selectAllBtn) {
+  selectAllBtn.addEventListener("click", () => {
+    visibleHosts = new Set(hosts);
+    manualFilter = true;
+    renderFilterList(hosts);
+    applyFilter();
+  });
+}
+if (clearAllBtn) {
+  clearAllBtn.addEventListener("click", () => {
+    visibleHosts = new Set();
+    manualFilter = true;
+    renderFilterList(hosts);
+    applyFilter();
+  });
+}
+if (filterToggleBtn) {
+  filterToggleBtn.addEventListener("click", () => {
+    if (!filterPopoverEl) {
+      return;
+    }
+    if (filterPopoverEl.classList.contains("open")) {
+      closeFilterPopover();
+    } else {
+      openFilterPopover();
+    }
+  });
+}
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeFilterPopover();
+  }
+});
+document.addEventListener("click", (event) => {
+  if (!filterPopoverEl || !filterToggleBtn) {
+    return;
+  }
+  if (!filterPopoverEl.classList.contains("open")) {
+    return;
+  }
+  const target = event.target;
+  if (filterPopoverEl.contains(target) || filterToggleBtn.contains(target)) {
+    return;
+  }
+  closeFilterPopover();
+});
 
 refreshAll();
 scheduleRefresh();

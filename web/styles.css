@@ -216,6 +216,12 @@ h1 {
   gap: 16px;
 }
 
+.sidebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .sidebar-head h2 {
   margin: 0;
   font-size: 1.1rem;
@@ -227,6 +233,100 @@ h1 {
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+.filter-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.ghost {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.ghost:hover {
+  border-color: rgba(31, 111, 120, 0.35);
+}
+
+.filter-wrap {
+  position: relative;
+}
+
+.filter-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 260px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 18px 32px rgba(34, 52, 65, 0.16);
+  display: none;
+  gap: 10px;
+  z-index: 50;
+  animation: popIn 0.2s ease;
+}
+
+.filter-popover.open {
+  display: grid;
+}
+
+.filter-popover::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  right: 18px;
+  width: 12px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  transform: rotate(45deg);
+}
+
+.filter-popover-head {
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.filter-popover-head strong {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.filter-popover-head span {
+  font-size: 0.78rem;
+}
+
+.filter-list {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.filter-item input {
+  accent-color: var(--accent);
+}
+
 
 .count {
   background: rgba(31, 111, 120, 0.12);
@@ -606,6 +706,17 @@ h1 {
   from {
     opacity: 0;
     transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
   }
   to {
     opacity: 1;

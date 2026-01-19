@@ -47,7 +47,25 @@
                 <h2>Servers</h2>
                 <p>Click to load GPU details</p>
               </div>
-              <span class="count" id="serverCount">0</span>
+              <div class="sidebar-actions">
+                <span class="count" id="serverCount">0</span>
+                <div class="filter-wrap">
+                  <button class="ghost" id="filterToggleBtn" type="button">Filter</button>
+                  <div class="filter-popover" id="filterPopover" aria-hidden="true">
+                    <div class="filter-popover-head">
+                      <div>
+                        <strong>Filter servers</strong>
+                        <span>Select visible items</span>
+                      </div>
+                    </div>
+                    <div class="filter-actions">
+                      <button class="ghost" id="selectAllBtn" type="button">All</button>
+                      <button class="ghost" id="clearAllBtn" type="button">None</button>
+                    </div>
+                    <div class="filter-list" id="filterList"></div>
+                  </div>
+                </div>
+              </div>
             </div>
             <div class="server-list" id="serverList"></div>
           </aside>
