@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GPU Monitor</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="backdrop"></div>
+    <div class="toast-container" id="toastContainer"></div>
+    <div class="page">
+      <header class="top">
+        <div class="brand">
+          <div class="eyebrow">Cluster Overview</div>
+          <h1>GPU Monitor</h1>
+          <p>
+            Live utilization, memory, and temperature across your SSH fleet.
+          </p>
+        </div>
+        <div class="controls">
+          <button id="refreshBtn" class="primary">Refresh Now</button>
+          <div class="meta">
+            <span>Last updated</span>
+            <strong id="lastUpdated">--</strong>
+          </div>
+          <div class="meta">
+            <span>SSH config</span>
+            <strong id="configPath">--</strong>
+          </div>
+        </div>
+      </header>
+
+      <section class="toolbar">
+        <div class="info">
+          <span class="dot"></span>
+          <span>Auto refresh selected server every 30 seconds</span>
+        </div>
+        <div class="status" id="statusText">Waiting for data...</div>
+      </section>
+
+      <main>
+        <section class="layout">
+          <aside class="sidebar">
+            <div class="sidebar-head">
+              <div>
+                <h2>Servers</h2>
+                <p>Click to load GPU details</p>
+              </div>
+              <span class="count" id="serverCount">0</span>
+            </div>
+            <div class="server-list" id="serverList"></div>
+          </aside>
+          <section class="detail" id="detailPane" data-status="idle">
+            <section class="empty" id="emptyState">
+              <h2>No servers detected</h2>
+              <p>
+                Add hosts to your SSH config or set
+                <code>SSH_CONFIG_PATH</code> and refresh.
+              </p>
+            </section>
+            <div class="detail-empty" id="detailEmpty">
+              <h2>Select a server</h2>
+              <p>Choose a server on the left to view GPU details.</p>
+            </div>
+            <div class="detail-body" id="detailBody">
+              <div class="detail-head">
+                <div>
+                  <div class="detail-host" id="detailHost">--</div>
+                  <div class="detail-sub">SSH target</div>
+                </div>
+                <div class="pill" id="detailPill">idle</div>
+              </div>
+              <div class="summary">
+                <div class="metric">
+                  <span>GPUs</span>
+                  <strong class="metric-count" id="detailMetricCount">--</strong>
+                </div>
+                <div class="metric">
+                  <span>Avg util</span>
+                  <strong class="metric-util" id="detailMetricUtil">--</strong>
+                </div>
+                <div class="metric">
+                  <span>Mem</span>
+                  <strong class="metric-mem" id="detailMetricMem">--</strong>
+                </div>
+              </div>
+              <div class="gpu-list" id="detailGpuList"></div>
+              <div class="error" id="detailError"></div>
+              <div class="process-panel" id="processPanel">
+                <div class="process-head">
+                  <div>
+                    <h3 id="processTitle">Processes</h3>
+                    <p id="processSubtitle">Select a GPU to view processes.</p>
+                  </div>
+                </div>
+                <div class="process-empty" id="processEmpty">
+                  Select a GPU to view processes.
+                </div>
+                <div class="process-list" id="processList"></div>
+                <div class="error" id="processError"></div>
+              </div>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <template id="serverItemTemplate">
+      <button class="server-item" type="button" data-status="idle">
+        <div>
+          <div class="server-name"></div>
+          <div class="server-meta">SSH target</div>
+        </div>
+        <div class="server-pill">idle</div>
+      </button>
+    </template>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
