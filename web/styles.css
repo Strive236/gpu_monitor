@@ -158,6 +158,78 @@ h1 {
   font-size: 0.95rem;
 }
 
+.startup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--border);
+}
+
+.startup-meta {
+  display: grid;
+  gap: 2px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.startup-meta strong {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.startup-hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: -4px;
+}
+
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 44px;
+  height: 26px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: rgba(31, 111, 120, 0.2);
+  transition: background 0.2s ease;
+}
+
+.slider::before {
+  content: "";
+  position: absolute;
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  top: 3px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 6px 10px rgba(20, 26, 33, 0.16);
+  transition: transform 0.2s ease;
+}
+
+.switch input:checked + .slider {
+  background: rgba(31, 111, 120, 0.55);
+}
+
+.switch input:checked + .slider::before {
+  transform: translateX(18px);
+}
+
 .toolbar {
   display: flex;
   justify-content: space-between;

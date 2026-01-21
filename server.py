@@ -4,6 +4,8 @@ import mimetypes
 import os
 import pathlib
 import subprocess
+import shutil
+import sys
 import tempfile
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -117,6 +119,228 @@ mapping = parse_gpu_map(gpu_text)
 processes = parse_processes(proc_text, mapping)
 print(json.dumps(processes))
 """
+SCHEDULED_TASK_NAME = "GPU Monitor"
+
+
+def _run_schtasks(args):
+    system_root = os.environ.get("SystemRoot", r"C:\Windows")
+    schtasks_path = os.path.join(system_root, "System32", "schtasks.exe")
+    if os.path.isfile(schtasks_path):
+        cmd = [schtasks_path]
+    else:
+        cmd = ["schtasks"]
+    return subprocess.run(
+        cmd + args,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _powershell_exe():
+    return shutil.which("powershell") or shutil.which("pwsh")
+
+
+def _ps_quote(value):
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _run_powershell(script):
+    exe = _powershell_exe()
+    if not exe:
+        return None, "powershell not found"
+    result = subprocess.run(
+        [exe, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        error_text = (result.stderr or result.stdout or "").strip()
+        return result, error_text or f"powershell exited {result.returncode}"
+    return result, ""
+
+
+def _query_task_powershell(task_name):
+    name = _ps_quote(task_name)
+    script = "\n".join(
+        [
+            f"$task = Get-ScheduledTask -TaskName {name} -ErrorAction SilentlyContinue",
+            "if ($null -eq $task) { exit 0 }",
+            f"$info = Get-ScheduledTaskInfo -TaskName {name} -ErrorAction SilentlyContinue",
+            "$state = $null",
+            "if ($info -and $info.State) { $state = $info.State.ToString() }",
+            "elseif ($task.State) { $state = $task.State.ToString() }",
+            "@{ enabled = $true; state = $state } | ConvertTo-Json -Compress",
+        ]
+    )
+    result, error_text = _run_powershell(script)
+    if error_text:
+        return None, error_text
+    output = (result.stdout or "").strip() if result else ""
+    if not output:
+        return {"enabled": False}, ""
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        return None, "invalid task status output"
+    return data, ""
+
+
+def _query_schtasks(task_name):
+    result = _run_schtasks(["/Query", "/TN", task_name, "/FO", "LIST", "/V"])
+    if result.returncode != 0:
+        return None, (result.stderr or result.stdout or "").strip()
+    data = {}
+    for raw in (result.stdout or "").splitlines():
+        if ":" not in raw:
+            continue
+        key, value = raw.split(":", 1)
+        data[key.strip()] = value.strip()
+    return data, ""
+
+
+def _startup_status():
+    if os.name != "nt":
+        return {"ok": False, "supported": False, "enabled": False}
+    if _powershell_exe():
+        data, error_text = _query_task_powershell(SCHEDULED_TASK_NAME)
+        if error_text:
+            return {
+                "ok": False,
+                "supported": True,
+                "enabled": False,
+                "error": error_text,
+            }
+        if data and data.get("enabled"):
+            return {
+                "ok": True,
+                "supported": True,
+                "enabled": True,
+                "status": data.get("state", ""),
+                "task": SCHEDULED_TASK_NAME,
+            }
+        return {"ok": True, "supported": True, "enabled": False}
+    info, error_text = _query_schtasks(SCHEDULED_TASK_NAME)
+    if info is None:
+        if "cannot find" in error_text.lower():
+            return {"ok": True, "supported": True, "enabled": False}
+        return {"ok": False, "supported": True, "enabled": False, "error": error_text}
+    status = info.get("Status", "") or info.get("State", "")
+    return {
+        "ok": True,
+        "supported": True,
+        "enabled": True,
+        "status": status,
+        "task": info.get("TaskName", SCHEDULED_TASK_NAME),
+    }
+
+
+def _set_startup(enabled):
+    if os.name != "nt":
+        return {"ok": False, "error": "startup not supported"}
+    if enabled:
+        script_path = pathlib.Path(__file__).resolve()
+        python_exe = sys.executable
+        if not os.path.isfile(python_exe):
+            return {"ok": False, "error": f"python not found: {python_exe}"}
+        if not script_path.is_file():
+            return {"ok": False, "error": f"script not found: {script_path}"}
+        if _powershell_exe():
+            exe = _ps_quote(python_exe)
+            script = _ps_quote(str(script_path))
+            workdir = _ps_quote(str(script_path.parent))
+            name = _ps_quote(SCHEDULED_TASK_NAME)
+            ps_script = "\n".join(
+                [
+                    f"$exe = {exe}",
+                    f"$script = {script}",
+                    f"$work = {workdir}",
+                    "$user = if ($env:USERDOMAIN) { $env:USERDOMAIN + '\\\\' + $env:USERNAME } else { $env:USERNAME }",
+                    "$arg = '\"' + $script + '\"'",
+                    "$action = New-ScheduledTaskAction -Execute $exe -Argument $arg -WorkingDirectory $work",
+                    "$trigger = New-ScheduledTaskTrigger -AtLogOn -User $user",
+                    f"Register-ScheduledTask -TaskName {name} -Action $action -Trigger $trigger -User $user -RunLevel Limited -Description 'GPU Monitor' -Force | Out-Null",
+                ]
+            )
+            result, error_text = _run_powershell(ps_script)
+            if error_text:
+                return {"ok": False, "error": error_text}
+            return {"ok": True, "enabled": True}
+        task_xml = f"""<?xml version="1.0" encoding="utf-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>GPU Monitor</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>{python_exe}</Command>
+      <Arguments>"{script_path}"</Arguments>
+      <WorkingDirectory>{script_path.parent}</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
+"""
+        task_file = BASE_DIR / ".gpu_monitor_task.xml"
+        try:
+            task_file.write_text(task_xml, encoding="utf-16")
+        except OSError as exc:
+            return {"ok": False, "error": str(exc)}
+        result = _run_schtasks(
+            ["/Create", "/TN", SCHEDULED_TASK_NAME, "/XML", str(task_file), "/F"]
+        )
+        try:
+            task_file.unlink()
+        except OSError:
+            pass
+        if result.returncode != 0:
+            error_text = (result.stderr or result.stdout or "").strip()
+            return {
+                "ok": False,
+                "error": error_text or "failed to create task",
+                "details": {
+                    "python": python_exe,
+                    "script": str(script_path),
+                    "task_xml": task_xml,
+                },
+            }
+        return {"ok": True, "enabled": True}
+    if _powershell_exe():
+        name = _ps_quote(SCHEDULED_TASK_NAME)
+        ps_script = f"Unregister-ScheduledTask -TaskName {name} -Confirm:$false -ErrorAction SilentlyContinue"
+        result, error_text = _run_powershell(ps_script)
+        if error_text:
+            return {"ok": False, "error": error_text}
+        return {"ok": True, "enabled": False}
+    result = _run_schtasks(["/Delete", "/TN", SCHEDULED_TASK_NAME, "/F"])
+    if result.returncode != 0:
+        error_text = (result.stderr or result.stdout or "").strip()
+        return {"ok": False, "error": error_text or "failed to delete task"}
+    return {"ok": True, "enabled": False}
 
 
 def parse_ssh_config(path_str):
@@ -703,6 +927,9 @@ class GPURequestHandler(BaseHTTPRequestHandler):
             hosts = parse_ssh_config(SSH_CONFIG_PATH)
             self._send_json({"hosts": hosts, "config": SSH_CONFIG_PATH})
             return
+        if parsed.path == "/api/startup":
+            self._send_json(_startup_status())
+            return
         if parsed.path == "/api/status":
             query = parse_qs(parsed.query)
             host = (query.get("host") or [None])[0]
@@ -805,6 +1032,25 @@ class GPURequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/api/startup":
+            length = int(self.headers.get("Content-Length", "0") or 0)
+            raw = self.rfile.read(length).decode("utf-8") if length else ""
+            try:
+                payload = json.loads(raw) if raw else {}
+            except json.JSONDecodeError:
+                self._send_text("invalid json", status=HTTPStatus.BAD_REQUEST)
+                return
+            enabled = payload.get("enabled")
+            if not isinstance(enabled, bool):
+                self._send_json(
+                    {"ok": False, "error": "missing enabled flag"},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+                return
+            result = _set_startup(enabled)
+            status = HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST
+            self._send_json(result, status=status)
+            return
         if parsed.path == "/api/status":
             length = int(self.headers.get("Content-Length", "0") or 0)
             raw = self.rfile.read(length).decode("utf-8") if length else ""

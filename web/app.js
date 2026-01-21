@@ -66,6 +66,10 @@ const processEmptyEl = document.getElementById("processEmpty");
 const processListEl = document.getElementById("processList");
 const processErrorEl = document.getElementById("processError");
 const toastContainerEl = document.getElementById("toastContainer");
+const startupPanelEl = document.getElementById("startupPanel");
+const startupToggleEl = document.getElementById("startupToggle");
+const startupStatusEl = document.getElementById("startupStatus");
+const startupHintEl = document.getElementById("startupHint");
 
 const REFRESH_MS = 30000;
 let hosts = [];
@@ -84,6 +88,7 @@ let uploadInProgress = false;
 let downloadInProgress = false;
 let commandInProgress = false;
 const commandSessions = new Map();
+let startupUpdating = false;
 
 const formatPercent = (value) => `${value}%`;
 const formatMiB = (value) => `${value.toLocaleString("en-US")} MiB`;
@@ -215,6 +220,31 @@ function longestCommonPrefix(list) {
 
 function setStatus(message) {
   statusTextEl.textContent = message;
+}
+
+function setStartupVisible(visible) {
+  if (startupPanelEl) {
+    startupPanelEl.style.display = visible ? "flex" : "none";
+  }
+  if (startupHintEl) {
+    startupHintEl.style.display = visible ? "block" : "none";
+  }
+}
+
+function setStartupState(enabled, label) {
+  if (startupStatusEl) {
+    startupStatusEl.textContent = label;
+  }
+  if (startupToggleEl) {
+    startupToggleEl.checked = !!enabled;
+  }
+}
+
+function setStartupBusy(isBusy) {
+  startupUpdating = isBusy;
+  if (startupToggleEl) {
+    startupToggleEl.disabled = isBusy;
+  }
 }
 
 function setLastUpdated() {
@@ -1266,6 +1296,37 @@ async function loadServers() {
   return data.hosts || [];
 }
 
+async function loadStartupStatus() {
+  if (!startupPanelEl || !startupToggleEl || !startupStatusEl) {
+    return;
+  }
+  try {
+    const response = await fetch("/api/startup");
+    const raw = await response.text();
+    const data = raw ? JSON.parse(raw) : {};
+    if (!data.supported) {
+      setStartupVisible(false);
+      return;
+    }
+    setStartupVisible(true);
+    if (!data.ok) {
+      setStartupState(false, "Unavailable");
+      setStartupBusy(true);
+      if (data.error) {
+        showToast(data.error);
+      }
+      return;
+    }
+    setStartupState(!!data.enabled, data.enabled ? "Enabled" : "Disabled");
+    setStartupBusy(false);
+  } catch (error) {
+    setStartupVisible(true);
+    setStartupState(false, "Unavailable");
+    setStartupBusy(true);
+    showToast("Failed to load startup status.");
+  }
+}
+
 async function refreshAll() {
   try {
     hosts = await loadServers();
@@ -1523,6 +1584,35 @@ if (uploadDropzone && uploadFileInput) {
   });
 }
 
+if (startupToggleEl) {
+  startupToggleEl.addEventListener("change", async () => {
+    if (startupUpdating) {
+      return;
+    }
+    const desired = startupToggleEl.checked;
+    setStartupBusy(true);
+    try {
+      const response = await fetch("/api/startup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: desired }),
+      });
+      const raw = await response.text();
+      const data = raw ? JSON.parse(raw) : {};
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Startup update failed.");
+      }
+      setStartupState(!!data.enabled, data.enabled ? "Enabled" : "Disabled");
+    } catch (error) {
+      setStartupState(!desired, !desired ? "Disabled" : "Enabled");
+      showToast(error.message || "Startup update failed.");
+    } finally {
+      setStartupBusy(false);
+    }
+  });
+}
+
 setTransferButtonsEnabled(false);
+loadStartupStatus();
 refreshAll();
 scheduleRefresh();
